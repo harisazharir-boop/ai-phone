@@ -1144,8 +1144,9 @@ def fake_cli(tmp_path, monkeypatch):
     `as_name` also installs it under the name a backend looks for (`claude`, `codex`) on a PATH with nothing else on
     it, for the paths where the config names no CLI of its own and the lookup is what has to be covered.
     """
-    from tests.unit.test_cli_brain import FAKE_CLI
+    from tests.unit.test_cli_brain import FAKE_CLI, fake_codex_home
 
+    fake_codex_home(tmp_path, monkeypatch)
     exe = tmp_path / "fake-cli"
     exe.write_text(FAKE_CLI)
     exe.chmod(0o755)
@@ -1288,6 +1289,7 @@ def test_chatgpt_models_are_the_plans_own_with_the_fastest_first(home, fake_cli)
     assert [m.id for m in found] == ["gpt-5.6-luna", "gpt-6-astra"]   # the measured default first; the hidden one is out
     assert found[0].name == "GPT-5.6-Luna" and found[1].note == "the default"
     assert [r["event"] for r in fake_cli.log()].count("turn") == 0    # asking costs no turn of the plan
+    assert (home / "brain" / "codex" / "auth.json").readlink() == Path(os.environ["CODEX_HOME"]) / "auth.json"
 
 
 def test_a_plan_that_lists_no_models_is_said_so(home, fake_cli):

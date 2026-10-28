@@ -272,16 +272,36 @@ MODELS = [{"id": "gpt-5.6-luna", "displayName": "GPT-5.6-Luna", "description": "
           {"id": "secret", "displayName": "Hidden", "description": "", "hidden": True, "isDefault": False}]
 
 
+def fake_codex_home(tmp_path, monkeypatch):
+    """Keep fake CLI runs independent of any real login, including in spawned workers.
+
+    The backend requires an auth file before launching the fake. Its empty JSON is only an existence placeholder;
+    the fake's scripted account/read response decides whether a test is logged in. No real credentials are copied.
+    """
+    user_home = tmp_path / "user-home"
+    user_home.mkdir(mode=0o700, exist_ok=True)
+    codex_home = tmp_path / "fake-codex-home"
+    codex_home.mkdir(mode=0o700, exist_ok=True)
+    auth = codex_home / "auth.json"
+    auth.write_text("{}\n")
+    auth.chmod(0o600)
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    return codex_home
+
+
 @pytest.fixture
 def cli(tmp_path, monkeypatch):
     """A fake CLI on disk, the home directory the session's private folder lives in, and the script it follows."""
     monkeypatch.setenv("AI_PHONE_HOME", str(tmp_path / "home"))
+    login_home = fake_codex_home(tmp_path, monkeypatch)
     exe = tmp_path / "fake-cli"
     exe.write_text(FAKE_CLI)
     exe.chmod(0o755)
 
     class Fake:
         path = str(exe)
+        codex_home = login_home
         spec_path = tmp_path / "script.json"
         log_path = tmp_path / "log.jsonl"
 
@@ -891,6 +911,32 @@ def test_closing_the_brain_ends_the_cli(cli):
 
 
 # ---- the tool boundary: a caller's words must not reach anything that can touch this Mac ----------
+
+def test_fake_codex_uses_only_its_synthetic_login(cli, tmp_path):
+    assert Path.home() == tmp_path / "user-home"
+    assert not (Path.home() / ".codex" / "auth.json").exists()
+    cli.script("codex", [{"deltas": ["Hi."]}])
+    brain = codex_brain(cli)
+    try:
+        assert "".join(brain.stream(1, talk("Hi"), 120)) == "Hi."
+    finally:
+        brain.close()
+    private_home = Path(cli.events("start")[0]["codex_home"])
+    assert (private_home / "auth.json").readlink() == cli.codex_home / "auth.json"
+
+
+def test_missing_synthetic_login_is_refused_before_the_fake_starts(cli):
+    (cli.codex_home / "auth.json").unlink()
+    cli.script("codex", [{"deltas": ["Hi."]}])
+    brain = codex_brain(cli)
+    try:
+        with pytest.raises(BrainError) as error:
+            brain.prepare(PROMPT)
+        assert error.value.kind == "not_logged_in"
+        assert cli.log == []
+    finally:
+        brain.close()
+
 
 def test_codex_is_started_with_every_tool_feature_off_and_a_home_of_its_own(cli, tmp_path):
     """What the review found: `-c mcp_servers={}` does not remove the person's MCP servers (measured against the real

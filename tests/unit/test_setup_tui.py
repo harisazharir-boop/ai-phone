@@ -1017,9 +1017,13 @@ def body_lines(app) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_a_wide_body_wraps_on_a_narrow_terminal():
+async def test_a_wide_body_wraps_on_a_narrow_terminal(tmp_path, monkeypatch):
     from ai_phone.setup import flow
     from tests.unit.test_setup_flow import NUMBER_LINE, SIP_LINE, FakeActions
+    # Keep this layout fixture independent of checkout/home path lengths and any real saved settings.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("AI_PHONE_HOME", str(tmp_path / ".ai-phone"))
+    monkeypatch.setattr(flow, "ai_phone", types.SimpleNamespace(__file__="/example/ai-phone/src/ai_phone/__init__.py"))
     summary = flow.done_text(FakeActions(exists=True, lines={"twilio": NUMBER_LINE, "agent": SIP_LINE}), flow.Session())
     done = Page(7, "You're set up", "Everything is saved. Here's how to use it.", body=summary)
     app = SetupApp(lambda ui: Outcome(ui.choose(done, [Option("Finish")], back=False)))

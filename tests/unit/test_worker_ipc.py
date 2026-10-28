@@ -428,8 +428,9 @@ async def test_llm_release_is_nothing_to_a_brain_with_no_session():
 
 def _fake_cli(tmp_path, monkeypatch, protocol, turns, **extra):
     """The fake CLI from the backend tests, ready for the real worker to drive."""
-    from tests.unit.test_cli_brain import FAKE_CLI
+    from tests.unit.test_cli_brain import FAKE_CLI, fake_codex_home
 
+    fake_codex_home(tmp_path, monkeypatch)
     exe = tmp_path / "fake-cli"
     exe.write_text(FAKE_CLI)
     exe.chmod(0o755)
@@ -460,6 +461,9 @@ async def test_a_hangup_during_session_startup_spends_no_turn(tmp_path, monkeypa
                      factory_args={"model": "gpt-5.6-luna", "cli": exe, "first_token_timeout_ms": 12000,
                                    "stream_idle_timeout_ms": 4000, "max_response_chars": 2000})
     await c.start()
+    assert (tmp_path / "home" / "brain" / "codex" / "auth.json").readlink() == (
+        Path(os.environ["CODEX_HOME"]) / "auth.json"
+    )
     turns_after_warmup = len([r for r in _cli_log(tmp_path) if r["event"] == "turn"])
     c.send({"op": "llm.prepare", "gen": c.current_gen, "system_prompt": "This call: take a message."})
     gen = c.next_gen()
