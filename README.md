@@ -99,6 +99,7 @@ travels over SIP/RTP; carrier charges and subscription limits apply.
 - [Architecture](architecture-essentials.md): components and call flow.
 - [NAT checklist](docs/nat-checklist.md): network configuration.
 - [Measurements](docs/phonon-2026-10-27.md): latest local call and interruption results.
+- [Contributing](CONTRIBUTING.md)
 
 Install and setup have been checked from a fresh clone. Local call and interruption tests have run;
 live carrier and end-to-end agent acceptance checks remain pending. The latest local run measured 1.50 s median

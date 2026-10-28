@@ -41,6 +41,9 @@ allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: needs pjsua and/or models"]
+markers = [
+  "integration: needs pjsua and/or models",
+  "live_brains: spends a real Claude/ChatGPT subscription; requires AI_PHONE_TEST_LIVE_BRAINS=1",
+]
 asyncio_mode = "auto"
 pythonpath = ["src"]

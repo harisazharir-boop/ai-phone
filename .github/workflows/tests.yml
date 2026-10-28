@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: "1"
+  AI_PHONE_TEST_LIVE_BRAINS: "0"
+  AI_PHONE_TEST_SIP_PORT: "5080"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+          python-version: "3.13"
+          enable-cache: false
+      - name: Install dependencies and build PJSIP binding
+        run: ./scripts/install.sh
+      - name: Run unit tests
+        timeout-minutes: 10
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: env -u NO_COLOR uv run pytest tests/unit -q
+
+  sip:
+    name: Local SIP smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+          python-version: "3.13"
+          enable-cache: false
+      - name: Install dependencies and build PJSIP binding
+        run: ./scripts/install.sh
+      - name: Check the local SIP tools
+        run: |
+          command -v pjsua
+          uv run python -c 'import ai_phone.vendor.pjsua2'
+      - name: Run calls with fake models
+        timeout-minutes: 10
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        # Explicit files keep real-model and subscription tests out of PR CI.
+        # Every daemon uses a temporary config and loopback SIP, with no carrier.
+        run: >-
+          env -u NO_COLOR uv run pytest
+          tests/integration/test_echo_call.py
+          tests/integration/test_daemon_smoke.py
+          tests/integration/test_incoming_cancel.py
+          -q

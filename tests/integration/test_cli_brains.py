@@ -1,8 +1,9 @@
 """One real turn through each subscription CLI: the protocols, the login and the timings, against the live thing.
 
-Each test is skipped unless that CLI is installed and logged in. When it runs it spends one tiny turn of the owner's
-own plan (and prints what it measured, so `-s` shows how fast the first word was). That one turn also re-checks the
-tool boundary: a session that reached for a tool would be marked spent.
+Each test is skipped before CLI discovery unless AI_PHONE_TEST_LIVE_BRAINS=1, and also skips if that CLI is not
+installed or logged in. An opted-in run spends the person's own plan allowance (and prints what it measured, so
+`-s` shows how fast the first word was). The turn also re-checks the tool boundary: a session that reached for a tool
+would be marked spent.
 """
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ import pytest
 from ai_phone.services.backends.cli_brain import ClaudeCodeLLM, CodexLLM, codex_models
 from ai_phone.services.errors import BrainError
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live_brains]
 
 PROMPT = "You are a phone assistant. Answer in one short sentence."
 ASK = "Say hello in five words."

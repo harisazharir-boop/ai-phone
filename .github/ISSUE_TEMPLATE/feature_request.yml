@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a change and explain the problem it would solve.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check existing issues for a similar request. Concrete examples help us discuss the scope before anyone starts a large change.
+        Keep credentials, phone numbers and private conversation text out of examples.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the use case and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the behavior you would like, with an example command or workflow if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context (optional)
+      description: Mention workarounds, related issues or tradeoffs. No implementation plan is required.

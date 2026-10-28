@@ -6,6 +6,9 @@ Read this first. If it does not answer your question, the table at the bottom sa
 
 One daemon, one or more lines, one phone call at a time across them. It registers to SIP trunks or PBXs (or answers at a plain SIP address), answers and places calls, and runs speech-to-text → language model → text-to-speech on the host by default. During a call, no network connections other than SIP signalling and RTP media to the peer, plus — only if you chose a brain that is not on this Mac — the one endpoint you configured, or the CLI of your own Claude or ChatGPT plan. Numbers come from lines (see below): a carrier key is used once, by `ai-phone lines` or `ai-phone setup`, never by the daemon.
 
+The current runtime and installer support macOS on Apple Silicon. Linux backends and the M5 HTTP API/dashboard
+are plans, not shipped features. A configured remote brain still uses local MLX speech models.
+
 ## The six invariants (never break these)
 
 1. **During a call, no network except SIP/RTP to the peer, and, only if configured, one brain: an endpoint, or the Claude Code / Codex CLI, which talk HTTPS to their provider.** The default brain is the local model and uses no socket; an endpoint that is not on this machine must be `https`, a subscription brain runs the CLI you are logged into as a child of the LLM worker, and the daemon says at start that transcripts, the system prompt and the history go there. No model downloads at runtime (`HF_HUB_OFFLINE=1`), no telemetry, no update checks. STUN and trusted-peer DNS happen at start only. Buying or connecting a number uses a carrier API from `ai-phone lines …` or `ai-phone setup`, never from the daemon, which does not even import the carrier code (see `architecture.md` §14a).
@@ -46,7 +49,7 @@ caller audio → `rx_ring` → VAD (Silero, 32 ms chunks) → **speech_end after
 | LLM (Mac) | mlx-lm, `mlx-community/Qwen3.5-9B-MLX-4bit` (32 GB+) or `-4B-` (16 GB; the default below 32 GB), `enable_thinking=False`, in the daemon's worker process | Ollama or any model server |
 | TTS (Mac) | Direct mlx-audio, 24 kHz: `tts.engine: phonon` uses `gradium/phonon-31m-en` with `voice: default`, speed 1.0; `kokoro` uses `mlx-community/Kokoro-82M-bf16` with configurable English voice/speed (existing config default `af_heart`) | — |
 | VAD | Silero, 16 kHz, in the main process | — |
-| Linux | sherpa-onnx or faster-whisper · llama-cpp-python CUDA (wheel index, not PyPI) · kokoro-onnx · silero-vad | — |
+| Linux (planned; no backend modules yet) | sherpa-onnx or faster-whisper · llama-cpp-python CUDA · kokoro-onnx · silero-vad | — |
 | Install | clone the repo, ./scripts/install.sh, uv run ai-phone setup | Homebrew tap, Docker, PyPI (dropped 2026-09-17) |
 | License | AGPLv3 (PJSIP is GPLv2-or-later; §13 permits) | MIT/Apache |
 
@@ -68,7 +71,7 @@ src/ai_phone/  telephony/ (endpoint, call, media_port, policy, events, state, ri
                models.py (model ids, download), voices.py (English voices by speech engine), vendor/ (the built SIP library, git-ignored)
                cli.py, cli_lines.py, cli_status.py, cli_call.py (call, listen, say, hangup), cli_models.py, daemon.py, config.py, secrets.py, paths.py
 native/pjsua2/ SWIG interface + build script (the extension's GPL source)
-scripts/       install.sh, latency_report.py, pjsua_peer.sh, pf/ ruleset, utterances.txt
+scripts/       install.sh, latency_report.py, pjsua_peer.sh, utterances.txt, soak.sh, soak_report.py
 config:        ~/.ai-phone/config.yaml (0600) · secrets.env (0600) · lines/ (carrier journals) · logs: ~/Library/Logs/ai-phone
 models:        the Hugging Face cache (~/.cache/huggingface), fetched by `ai-phone setup` or `ai-phone models pull`
 state:         ~/.ai-phone/state.json · control.sock · calls-today.json (daily outbound counter)
@@ -92,8 +95,10 @@ M1 latency proof: p50 < 1.0 s at 8 kHz over the 20-utterance script, else the 4B
 
 ## Test peer (same box)
 
+For an isolated test daemon configured on port 5080 (the integration suite uses `AI_PHONE_TEST_SIP_PORT=5080`):
+
 ```
-pjsua --local-port 5062 --null-audio --play-file utt.wav --auto-play --auto-play-hangup sip:ai@127.0.0.1:5060
+pjsua --local-port 5082 --null-audio --play-file utt.wav --auto-play --auto-play-hangup sip:ai@127.0.0.1:5080
 ```
 
 ## When to open `architecture.md`

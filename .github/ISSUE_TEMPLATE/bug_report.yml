@@ -1,0 +1,73 @@
+name: Bug report
+description: Report something that is not working as expected.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check existing issues first. Share only the details needed to reproduce the problem.
+        Remove passwords, API keys, tokens, authorization headers, phone numbers, account IDs and private conversation text from logs, commands and screenshots. Never attach `secrets.env`.
+        For a security vulnerability, [report it privately](https://github.com/oxnw/ai-phone/security/advisories/new).
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or version
+      description: Run `git rev-parse --short HEAD` in your ai-phone checkout. Say if you have local changes, or write "unknown" if you cannot check.
+      placeholder: Commit hash, release tag, or unknown
+    validations:
+      required: true
+  - type: input
+    id: computer
+    attributes:
+      label: OS, chip and RAM
+      description: Include your operating system version, processor and total memory. Write "unknown" for anything you cannot check.
+      placeholder: macOS 15.6, Apple M3, 24 GB RAM
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the command or setup choices, and whether this happens every time. Use example addresses and numbers.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual result
+      description: What should have happened, and what happened instead? Include the exact error if there is one, after redacting private details.
+      placeholder: |
+        Expected:
+        Actual:
+    validations:
+      required: true
+  - type: textarea
+    id: models
+    attributes:
+      label: Brain, models and voice
+      description: If relevant, name the brain (local, endpoint, Claude or ChatGPT), its model, and the speech engine/voice. Do not paste credentials or private endpoint URLs. Write "not applicable" for install or other unrelated problems.
+      placeholder: Local Qwen3.5 4B; Phonon, default voice
+  - type: dropdown
+    id: call_direction
+    attributes:
+      label: Call direction
+      options:
+        - Not applicable
+        - Inbound
+        - Outbound
+        - Both
+        - Not sure
+  - type: input
+    id: sip_provider
+    attributes:
+      label: SIP provider or peer
+      description: If relevant, name the provider/PBX or local test peer, and transport (UDP, TCP or TLS). Include whether registration succeeds. Write "not applicable" if unrelated; omit account details.
+      placeholder: Local pjsua peer over UDP, no registration
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs (optional)
+      description: Paste only the relevant excerpt. Remove secrets, authorization headers, phone numbers, account IDs and conversation text first. Do not attach your full config or logs folder.
+      render: text

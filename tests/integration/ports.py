@@ -11,11 +11,11 @@ One run uses:
   10000 + (port - 5060) * 100 up to 100 ports above that. The pjsua peers use pjsua's own RTP ports.
 
 Runs at the same time must use values of P at least 10 apart (for example 5090 and 5100); closer runs share SIP or RTP
-ports. When AI_PHONE_TEST_SIP_PORT is unset, P falls back to 5060, where a real daemon may listen: always set it, to a
-value whose range P to P+6 avoids 5060."""
+ports. When AI_PHONE_TEST_SIP_PORT is unset, P is 5080, away from the production default of 5060. An explicit override
+must also choose a free range P to P+6 that avoids any live daemon."""
 import os
 
-SIP_PORT = int(os.environ.get("AI_PHONE_TEST_SIP_PORT", "5060"))
+SIP_PORT = int(os.environ.get("AI_PHONE_TEST_SIP_PORT", "5080"))
 PEER_PORT = SIP_PORT + 2
 SECOND_SIP_PORT = SIP_PORT + 4  # a second daemon (TLS on + 5); the pjsua peer uses SIP_PORT + 2
 

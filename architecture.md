@@ -7,6 +7,12 @@
 | **Precedence** | Owner's decisions → this doc. Where the text and the decision log in §15 disagree on a *decision*, the decision log wins. |
 | **Notation** | **[D]** decided; do not change without the owner. **[P]** proposed default; change if Milestone 1 measurement says so, and record the change in §15. **[V]** verified against library source, PyPI, Hugging Face, or Homebrew on 2026-09-02 by an independent reviewer. |
 
+**Implementation status:** this document contains the original design as well as later implementation notes.
+`[D]` records a decision, not proof that a feature is built. The supported runtime and installer currently require
+macOS on Apple Silicon. Linux backends (§5.4), the HTTP API and dashboard (M5), and the later check command (§7.3)
+are not implemented. The repository map (§10.1) and CI description (§10.5) describe the current files;
+`config.example.yaml` and `docs/usage.md` describe the current configuration and commands.
+
 ---
 
 ## 1. Purpose and shape
@@ -48,10 +54,10 @@ Non-goals that shape the architecture: single-call, English-only, no web UI, no 
 |---|---|---|
 | `ai-phoned` (main) | PJSIP endpoint, asyncio event loop, pipeline, control plane, supervisor of workers | Owns the 20 ms media clock; must never block on model compute |
 | `stt-worker` | Speech-to-text backend (parakeet) | GIL isolation; a slow decode cannot stall the media thread |
-| `llm-worker` | Language model backend (mlx-lm / llama-cpp-python) | Largest memory; isolated crash domain |
+| `llm-worker` | Language model backend (mlx-lm, configured endpoint or subscription CLI) | Largest local model; isolated crash domain |
 | `tts-worker` | Text-to-speech backend (Phonon or Kokoro) | Same |
 
-Workers are children of the main process (`multiprocessing`, spawn start method on both platforms for consistency). There is no external model server in the default install: Ollama, vLLM and similar are excluded as a dependency **[D]** (they conflict with one-command install and would appear in the isolation firewall log). Since Milestone 2 the user may *choose* an OpenAI-compatible endpoint as the brain (`brain.kind: openai_compatible`, §14a.7), and since Milestone 4 the Claude or ChatGPT plan they already pay for, through the CLI they are logged into (`claude` / `chatgpt`, a child process of the LLM worker); that is their configuration, announced at start, not something ai-phone installs or needs.
+Workers are children of the main process (`multiprocessing`, spawn start method). There is no external model server in the default install: Ollama, vLLM and similar are excluded as a dependency **[D]** (they conflict with one-command install and would appear in the isolation firewall log). Since Milestone 2 the user may *choose* an OpenAI-compatible endpoint as the brain (`brain.kind: openai_compatible`, §14a.7), and since Milestone 4 the Claude or ChatGPT plan they already pay for, through the CLI they are logged into (`claude` / `chatgpt`, a child process of the LLM worker); that is their configuration, announced at start, not something ai-phone installs or needs.
 
 VAD runs **in the main process** **[P]**: Silero is small (~2 MB) and its per-chunk cost (~1 ms for 32 ms of audio on Apple Silicon) is far below the frame budget; keeping it in-process removes an IPC hop from the endpointing path, which is 300 of the 900 ms budget.
 
@@ -222,8 +228,8 @@ DTMF: `onDtmfDigit` → `DtmfEvent(digit)` to the queue. Unused through launch (
 
 ### 3.7 Building the extension
 
-- macOS **[V]**: `brew install swig pkgconf pjproject` gives the tools and the 2.17 bottle (static `.a` libs, headers, `libpjproject.pc`, `bin/pjsua`; **no `.i` files**). The interface files are committed in `native/pjsua2/` (`pjsua2.i` and `symbols.i` from the 2.17 source tarball, whose SHA-256 is recorded beside them), so the build downloads nothing. `native/pjsua2/build.sh` runs `swig -c++ -python -threads -w312 -I$(brew --prefix pjproject)/include pjsua2.i`, then compiles and links with `pkg-config --static --cflags --libs libpjproject` (pulls openssl@3 and the Apple frameworks the bottle was built with, including AVFoundation/VideoToolbox because the bottle has video enabled). `scripts/install.sh` runs it (§10.2).
-- Linux CI **[V]**: build pjproject 2.17 from source with `--enable-shared` or `CFLAGS=-fPIC`; the static default is not position-independent and the extension will not link.
+- macOS **[V]**: `brew install swig pkgconf pjproject` gives the tools and the 2.17 bottle (static `.a` libs, headers, `libpjproject.pc`, `bin/pjsua`; **no `.i` files**). The interface files are committed in `native/pjsua2/` (`pjsua2.i` and `symbols.i` from the 2.17 source tarball, whose SHA-256 is recorded beside them), so the build downloads nothing. `native/pjsua2/build.sh` runs `swig -c++ -python -threads -w312 -I$(brew --prefix pjproject)/include pjsua2.i`, then compiles and links with `pkg-config --static --cflags --libs libpjproject`. It reads the installed pjproject keg's dependencies with `brew deps pjproject` and adds their library and pkg-config paths, so the OpenSSL major comes from that keg rather than a hard-coded version. `scripts/install.sh` runs it (§10.2).
+- Future Linux build requirement **[V]**: build pjproject 2.17 from source with `--enable-shared` or `CFLAGS=-fPIC`; the static default is not position-independent and the extension will not link. No Linux build workflow is currently shipped.
 - The compiled module is built on each person's own Mac, for the project environment's Python, and copied with the generated `pjsua2.py` into `src/ai_phone/vendor/` (git-ignored), where ai-phone imports it as `ai_phone.vendor.pjsua2` **[D]** (2026-09-17: no wheel is published, §15). `requires-python >=3.11,<3.14`.
 - Licensing **[D][V]**: PJSIP is GPLv2-or-later; ai-phone is AGPLv3 (GPLv3 §13). The extension's corresponding source (interface files, build script, pjproject version and checksum) is `native/pjsua2/` in the repository, beside the code that uses it.
 
@@ -366,12 +372,16 @@ use the model's text handling; no additional number-normalization pass is applie
 
 LLM worker specifics: `mlx_lm.load(model_id)`; `make_prompt_cache(model)` primed with the system prompt at warm-up (since Milestone 3, with the fixed phone instructions and the "This call:" header, §14b.4); `stream_generate(model, tokenizer, prompt, max_tokens=..., prompt_cache=cache)`. Because history is a suffix of a stable prefix, the cache is reused every turn; the worker reports `prompt_eval_ms` and `gen_ms` separately so the LLM budget row (250 ms, zero slack) is diagnosable.
 
-### 5.4 Linux backends **[D]**
+### 5.4 Planned Linux backends **[D]**
+
+These are recorded backend choices for a future port, not modules available in the repository. The installer
+currently refuses Linux and Windows; choosing a remote brain still leaves MLX speech recognition and synthesis
+on the local machine. There is no Linux runtime or Docker image to install today.
 
 | Role | Package | Notes |
 |---|---|---|
 | STT | `sherpa-onnx` (parakeet or Nemotron via ONNX) or `faster-whisper` | pick by measured latency when the Linux backends are built |
-| LLM | `llama-cpp-python` with CUDA | PyPI has sdist only **[V]**; the Docker image installs from the maintainer's `cu12x` wheel index. GGUF 4-bit Qwen3.5 of the same tier. |
+| LLM | `llama-cpp-python` with CUDA | The baseline proposed the maintainer's `cu12x` wheel index and GGUF 4-bit Qwen3.5 of the same tier; packaging is not implemented. |
 | TTS | `kokoro-onnx` | requires Python < 3.14 |
 | VAD | `silero-vad` | — |
 
@@ -534,25 +544,33 @@ The TUI (M5) tails this file. The gate check for M1 is a script over 20 turns: `
 
 Decided 2026-09-17 (§15): nothing is packaged, published or installed as a background service. People clone the repository, run `scripts/install.sh`, then `ai-phone setup`, and start ai-phone in the foreground with `uv run ai-phone run`. macOS on Apple Silicon only; the Linux backends (§5.4) are later work.
 
-### 10.1 Repository layout **[P]**
+### 10.1 Repository layout
+
+Current source files, with generated files marked. Planned Linux backends and M5 control interfaces are not
+included in this map.
 
 ```
 ai-phone/
   architecture-essentials.md · architecture.md · README.md · LICENSE (AGPLv3)
   pyproject.toml                    # ai-phone; requires-python >=3.11,<3.14
   src/ai_phone/
-    cli.py  config.py  daemon.py  models.py  voices.py
-    telephony/   endpoint.py account.py call.py media_port.py policy.py rings.py
-    pipeline/    turn.py vad.py bargein.py chunker.py audio_out.py timing.py
-    services/    base.py ipc.py worker.py registry.py
-      backends/  mlx_parakeet.py mlx_lm_backend.py mlx_kokoro.py sherpa_stt.py llamacpp_llm.py kokoro_onnx.py silero.py
-    control/     protocol.py server.py client.py api.py (M5) tui.py (M5)
+    cli.py  cli_call.py  cli_lines.py  cli_models.py  cli_status.py
+    config.py  daemon.py  models.py  voices.py  calls.py  call_guard.py  paths.py  secrets.py
+    telephony/   endpoint.py call.py media_port.py policy.py rings.py events.py state.py pj.py
+    pipeline/    turn.py replies.py prompts.py vad.py bargein.py chunker.py audio_out.py timing.py
+    services/    base.py ipc.py worker.py client.py errors.py tts.py
+      backends/  mlx_parakeet.py mlx_lm_backend.py mlx_kokoro.py mlx_phonon.py mlx_memory.py
+                 openai_compat.py cli_brain.py fake.py
+    control/     protocol.py server.py client.py
+    lines/       journal.py config_writer.py forward.py credentials.py
+    providers/   base.py telnyx.py twilio.py fake.py
     setup/       ui.py flow.py actions.py plain.py tui.py look.py     # ai-phone setup (§10.3)
     vendor/      pjsua2.py _pjsua2*.so           # built by scripts/install.sh; git-ignored
   native/pjsua2/                    # pjsua2.i, symbols.i (from pjproject 2.17), build.sh, GPL notice; the extension's source
-  scripts/     install.sh  latency_report.py  pjsua_peer.sh  pf/ai-phone.conf  utterances.txt
-  tests/       unit/ integration/ soak/
-  .github/workflows/  build.yml  tests.yml
+  scripts/     install.sh  latency_report.py  pjsua_peer.sh  utterances.txt
+               gate_run.sh  quiet_gate.sh  soak.sh  soak_report.py  spike_trio_latency.py
+  tests/       unit/ integration/
+  .github/workflows/  tests.yml
 ```
 
 ### 10.2 The install script (`scripts/install.sh`)
@@ -609,26 +627,35 @@ Downloads what the config needs and is not on this Mac yet (§5.5), for the tier
 
 ### 10.5 CI **[D]**
 
-- `build.yml`: a macOS arm64 runner builds the SWIG module per ABI (cp311–cp313) against the brew bottle, as `scripts/install.sh` does. Nothing is published. Linux, later: build pjproject 2.17 from source with `-fPIC` (§3.7), then the SWIG module per ABI.
-- `tests.yml`: unit tests on every push; integration tests using brew's `pjsua` as the SIP peer.
+`.github/workflows/tests.yml` defines two checks on pull requests, pushes to `main`, and manual dispatch:
+
+- **Unit tests:** installs dependencies and builds the native binding through `scripts/install.sh`, then runs
+  `env -u NO_COLOR uv run pytest tests/unit -q`.
+- **Local SIP smoke:** builds the same binding and uses Homebrew's `pjsua` for the echo, fake-model daemon and
+  incoming-cancellation tests. Test daemons use temporary configurations and loopback SIP on port 5080.
+
+Both jobs use `macos-15` and Python 3.13. Test steps set Hugging Face offline mode; the workflow does not download
+model weights, use subscription brains, register a carrier or place a real call. These checks cover one Python
+version on macOS; a Python ABI matrix and Linux CI remain future work. Workflow configuration alone is not
+evidence of a successful run or live carrier compatibility.
 
 ## 11. Testing strategy **[D]**
 
 | Level | What | How |
 |---|---|---|
 | Unit | clause chunker; barge-in detector on synthetic audio (tone under playback, speech over playback, speakerphone leak simulation); endpointer timing; policy evaluation (RFC 1918 / loopback / trusted peers); config validation; ring buffer overflow/underflow | pytest, no models, no network |
-| Integration | loopback call with the fake peer: `pjsua --local-port 5062 --null-audio --play-file utt.wav --auto-play --auto-play-hangup sip:ai@127.0.0.1:5060` **[V]** (pjsua's help says `--auto-play` is for incoming calls only, but the code connects the file to any call, so outbound-from-pjsua works); echo mode proves SIP+RTP+resampling before models; full mode with real workers proves a turn end to end | pytest + subprocess, marked `integration`, requires models |
+| Integration | isolated loopback SIP with `AI_PHONE_TEST_SIP_PORT=5080`; echo mode proves SIP+RTP+resampling, fake-model daemon tests exercise call handling, and separate cached-model tests exercise real backends | pytest + subprocess; real-model tests require cached weights; subscription tests require explicit opt-in |
 | Latency | `scripts/utterances.txt` (20 lines) played by the peer; `latency_report.py` computes p50/p95 per stage; the M1 gate | manual on the dev machine, CI-optional |
 | Soak | 24 h registration against a real trunk with a call every hour | manual, M2 |
-| Isolation | run the pf ruleset in `scripts/pf/`, place a call, assert the log shows only the SIP peer | manual, part of the launch demo |
+| Isolation (planned) | firewall-observed call allowing only SIP/RTP and the configured brain; no pf ruleset is currently shipped | manual launch check, not a CI result |
 
 ## 12. Security model **[D]**
 
 - Threat: SIP scanners on the public internet. Defaults: `registered_trunk` acceptance (unsolicited INVITEs get 403), per-IP lockout, TLS+SRTP accepted when offered, RTP port range narrow and documented.
 - Secrets: config file mode 0600; SIP passwords, the brain key and the carrier keys saved by `ai-phone setup` live in `secrets.env` (0600), named by `password_env`/`api_key_env`; never logged or shown.
-- API: loopback by default; bearer token required otherwise.
+- Planned HTTP API (M5): loopback by default; bearer token required otherwise. This API is not implemented.
 - Control socket: mode 0600, so any process of the same user can place calls and read transcripts, and nobody else can. The daemon itself refuses emergency numbers and enforces `calls.daily_limit` for every client (§14b.8).
-- Isolation: no outbound connections except SIP/RTP to the peer (and STUN if the user configures it, which a later check command will flag, §7.3). No telemetry, no update checks. Verified by the shipped pf ruleset during the launch demo.
+- Isolation: no outbound connections during a call except SIP/RTP to the peer and the configured brain (§14a.7). STUN and trusted-peer DNS happen at startup. No telemetry or update checks. A firewall-observed launch check remains planned; no pf ruleset is currently shipped.
 - Supply chain: pinned versions; the vendored PJSIP build script records the exact pjproject tarball SHA.
 
 ## 13. Failure modes and recovery
